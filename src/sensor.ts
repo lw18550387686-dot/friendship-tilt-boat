@@ -1,3 +1,5 @@
+import { CAPSIZE_DEGREES, STABLE_DEGREES } from './rules'
+
 export interface Tilt {
   roll: number
   pitch: number
@@ -46,11 +48,11 @@ export function lowPass(previous: Tilt, next: Tilt, alpha = 0.18): Tilt {
   }
 }
 
-export function isStable(roll: number, pitch: number, threshold = 3): boolean {
+export function isStable(roll: number, pitch: number, threshold = STABLE_DEGREES): boolean {
   return Math.abs(roll) <= threshold && Math.abs(pitch) <= threshold
 }
 
-export function isCapsized(roll: number, threshold = 15): boolean {
+export function isCapsized(roll: number, threshold = CAPSIZE_DEGREES): boolean {
   return Math.abs(roll) >= threshold
 }
 

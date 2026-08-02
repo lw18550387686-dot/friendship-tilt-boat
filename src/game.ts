@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { gradeFor, isCapsized, isStable, type Tilt } from './sensor'
+import { DANGER_DEGREES, HORIZONTAL_LIMIT, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta } from './rules'
 
 export interface RunStats {
   timeLeft: number
@@ -9,6 +10,7 @@ export interface RunStats {
   pitch: number
   stable: boolean
   danger: boolean
+  hits: number
 }
 
 export interface RunResult {
@@ -19,6 +21,7 @@ export interface RunResult {
   stableSeconds: number
   totalSeconds: number
   maxRoll: number
+  hits: number
 }
 
 interface BoatCallbacks {
@@ -35,7 +38,9 @@ export class FriendshipBoatGame {
   private boat = new THREE.Group()
   private water!: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>
   private laneObjects = new THREE.Group()
+  private obstacles = new THREE.Group()
   private tilt: Tilt = { roll: 0, pitch: 0 }
+  private horizontalTarget = 0
   private running = false
   private finished = false
   private timeLeft = 60
@@ -44,6 +49,8 @@ export class FriendshipBoatGame {
   private score = 0
   private maxRoll = 0
   private capsizeHold = 0
+  private hits = 0
+  private collisionPulse = 0
   private last = performance.now()
   private raf = 0
 
@@ -71,12 +78,21 @@ export class FriendshipBoatGame {
     this.score = 0
     this.maxRoll = 0
     this.capsizeHold = 0
+    this.hits = 0
+    this.collisionPulse = 0
+    this.horizontalTarget = 0
     this.boat.position.set(0, 1.2, 3)
     this.boat.rotation.set(0, 0, 0)
+    this.boat.scale.setScalar(1)
+    this.resetObstacles()
   }
 
   stop(): void { this.running = false }
   setTilt(tilt: Tilt): void { this.tilt = tilt }
+  steerHorizontal(deltaPixels: number, viewportWidth: number): void {
+    if (!this.running) return
+    this.horizontalTarget = THREE.MathUtils.clamp(this.horizontalTarget + swipeToWorldDelta(deltaPixels, viewportWidth), -HORIZONTAL_LIMIT, HORIZONTAL_LIMIT)
+  }
 
   private buildScene(): void {
     const hemi = new THREE.HemisphereLight(0xe9fbff, 0x185b78, 2.7)
@@ -95,6 +111,8 @@ export class FriendshipBoatGame {
     this.scene.add(this.boat)
     this.buildCourse()
     this.scene.add(this.laneObjects)
+    this.buildObstacles()
+    this.scene.add(this.obstacles)
 
     const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(9, 48), new THREE.MeshBasicMaterial({ color: 0xffe7a4, fog: false }))
     sunDisc.position.set(-32, 25, -95); this.scene.add(sunDisc)
@@ -149,6 +167,65 @@ export class FriendshipBoatGame {
     }
   }
 
+  private buildObstacles(): void {
+    for (let index = 0; index < 14; index++) {
+      const obstacle = this.buildObstacle(index % 3)
+      obstacle.userData.index = index
+      obstacle.userData.pass = 0
+      obstacle.userData.hit = false
+      obstacle.position.z = -24 - index * 22
+      this.placeObstacle(obstacle)
+      this.obstacles.add(obstacle)
+    }
+  }
+
+  private buildObstacle(kind: number): THREE.Group {
+    const obstacle = new THREE.Group()
+    if (kind === 0) {
+      const reef = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9, 0), material(0xe7654f, 0.9))
+      reef.scale.set(1.25, 0.78, 0.9); obstacle.add(reef)
+      const cap = new THREE.Mesh(new THREE.DodecahedronGeometry(0.48, 0), material(0xffb04d, 0.78))
+      cap.position.set(0.55, 0.45, -0.1); obstacle.add(cap)
+    } else if (kind === 1) {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.45, 1.25, 1.25), material(0x9b5938, 0.82))
+      obstacle.add(crate)
+      for (const offset of [-0.48, 0.48]) {
+        const band = new THREE.Mesh(new THREE.BoxGeometry(0.13, 1.32, 1.32), material(0xffd16a, 0.55))
+        band.position.x = offset; obstacle.add(band)
+      }
+    } else {
+      const pod = new THREE.Mesh(new THREE.SphereGeometry(0.72, 14, 10), material(0x7c62d7, 0.42, 0.12))
+      pod.scale.y = 1.18; obstacle.add(pod)
+      for (let arm = 0; arm < 5; arm++) {
+        const spike = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.72, 7), material(0x5ce0bd, 0.5))
+        const angle = arm / 5 * Math.PI * 2
+        spike.position.set(Math.cos(angle) * 0.74, Math.sin(angle * 2) * 0.18, Math.sin(angle) * 0.74)
+        spike.rotation.z = Math.PI / 2; spike.rotation.y = -angle; obstacle.add(spike)
+      }
+    }
+    const warningRing = new THREE.Mesh(new THREE.TorusGeometry(1.05, 0.055, 6, 28), new THREE.MeshBasicMaterial({ color: 0xffed8a }))
+    warningRing.rotation.x = Math.PI / 2; warningRing.position.y = -0.62; obstacle.add(warningRing)
+    obstacle.traverse((object) => { if (object instanceof THREE.Mesh) object.castShadow = true })
+    return obstacle
+  }
+
+  private placeObstacle(obstacle: THREE.Object3D): void {
+    const lanePattern = [-3.35, 0, 3.35, 0, -3.35, 3.35, 0]
+    const heightPattern = [0.72, 1.86, 0.72, 1.86, 1.86, 0.72, 1.25]
+    const pattern = (Number(obstacle.userData.index) + Number(obstacle.userData.pass)) % lanePattern.length
+    obstacle.position.x = lanePattern[pattern]
+    obstacle.position.y = heightPattern[pattern]
+  }
+
+  private resetObstacles(): void {
+    this.obstacles.children.forEach((obstacle, index) => {
+      obstacle.userData.pass = 0
+      obstacle.userData.hit = false
+      obstacle.position.z = -24 - index * 22
+      this.placeObstacle(obstacle)
+    })
+  }
+
   private update(dt: number, now: number): void {
     const wave = now * 0.001
     const positions = this.water.geometry.attributes.position as THREE.BufferAttribute
@@ -167,29 +244,49 @@ export class FriendshipBoatGame {
     }
 
     this.elapsed += dt; this.timeLeft = Math.max(0, 60 - this.elapsed)
-    const roll = THREE.MathUtils.clamp(this.tilt.roll, -28, 28)
-    const pitch = THREE.MathUtils.clamp(this.tilt.pitch, -18, 18)
+    const roll = THREE.MathUtils.clamp(this.tilt.roll, -9, 9)
+    const pitch = THREE.MathUtils.clamp(this.tilt.pitch, -14, 14)
     this.maxRoll = Math.max(this.maxRoll, Math.abs(roll))
     const stable = isStable(roll, pitch)
-    const danger = Math.abs(roll) >= 11
+    const danger = Math.abs(roll) >= DANGER_DEGREES
     if (stable) { this.stableSeconds += dt; this.score += dt * 115 }
     else this.score += dt * Math.max(8, 52 - Math.abs(roll) * 2.2)
     this.boat.rotation.z += (THREE.MathUtils.degToRad(-roll * 1.38) - this.boat.rotation.z) * Math.min(1, dt * 8)
     this.boat.rotation.x += (THREE.MathUtils.degToRad(pitch * 0.45) - this.boat.rotation.x) * Math.min(1, dt * 7)
-    this.boat.position.x = THREE.MathUtils.clamp(this.boat.position.x + roll * dt * 0.045, -5.8, 5.8)
-    this.boat.position.y = 1.2 + Math.sin(wave * 2.1) * 0.13
-    const courseSpeed = 8.5 + THREE.MathUtils.clamp(-pitch * 0.12, -1.8, 2.2)
+    this.boat.position.x += (this.horizontalTarget - this.boat.position.x) * Math.min(1, dt * 10)
+    const verticalTarget = pitchToBoatHeight(pitch) + Math.sin(wave * 2.1) * 0.09
+    this.boat.position.y += (verticalTarget - this.boat.position.y) * Math.min(1, dt * 8)
+    const courseSpeed = 9.2
     for (const object of this.laneObjects.children) {
       object.position.z += courseSpeed * dt
       if (object.position.z > 18) object.position.z -= 312
     }
+    for (const obstacle of this.obstacles.children) {
+      obstacle.position.z += courseSpeed * dt
+      obstacle.rotation.y += dt * 0.65
+      if (obstacle.position.z > 15) {
+        obstacle.position.z -= 308
+        obstacle.userData.pass = Number(obstacle.userData.pass) + 1
+        obstacle.userData.hit = false
+        this.placeObstacle(obstacle)
+      }
+      if (!obstacle.userData.hit && Math.abs(obstacle.position.z - this.boat.position.z) < 1.45 && overlapsObstacle(this.boat.position.x, this.boat.position.y, obstacle.position.x, obstacle.position.y)) {
+        obstacle.userData.hit = true
+        this.hits += 1
+        this.score = Math.max(0, this.score - 280)
+        this.collisionPulse = 0.32
+      }
+    }
+    this.collisionPulse = Math.max(0, this.collisionPulse - dt)
+    const collisionScale = this.collisionPulse > 0 ? 1 + Math.sin(this.collisionPulse * 55) * 0.055 : 1
+    this.boat.scale.setScalar(collisionScale)
     this.camera.position.x += ((this.boat.position.x * 0.42) - this.camera.position.x) * Math.min(1, dt * 3)
     this.camera.lookAt(this.boat.position.x * 0.14, 1.25, -8)
 
     if (isCapsized(roll)) this.capsizeHold += dt
     else this.capsizeHold = Math.max(0, this.capsizeHold - dt * 2.4)
-    this.callbacks.update({ timeLeft: this.timeLeft, stableSeconds: this.stableSeconds, score: Math.round(this.score), roll, pitch, stable, danger })
-    if (this.capsizeHold >= 0.28) this.finish('capsized')
+    this.callbacks.update({ timeLeft: this.timeLeft, stableSeconds: this.stableSeconds, score: Math.round(this.score), roll, pitch, stable, danger, hits: this.hits })
+    if (this.capsizeHold >= 0.18) this.finish('capsized')
     else if (this.timeLeft <= 0) this.finish('finished')
     this.renderer.render(this.scene, this.camera)
   }
@@ -198,7 +295,7 @@ export class FriendshipBoatGame {
     if (this.finished) return
     this.finished = true; this.running = false
     if (reason === 'capsized') this.boat.rotation.z = this.tilt.roll > 0 ? -Math.PI / 2 : Math.PI / 2
-    this.callbacks.finish({ completed: reason === 'finished', reason, score: Math.round(this.score), grade: gradeFor(this.stableSeconds, Math.max(0.01, this.elapsed)), stableSeconds: this.stableSeconds, totalSeconds: this.elapsed, maxRoll: this.maxRoll })
+    this.callbacks.finish({ completed: reason === 'finished', reason, score: Math.round(this.score), grade: gradeFor(this.stableSeconds, Math.max(0.01, this.elapsed)), stableSeconds: this.stableSeconds, totalSeconds: this.elapsed, maxRoll: this.maxRoll, hits: this.hits })
   }
 
   private resize = (): void => {
