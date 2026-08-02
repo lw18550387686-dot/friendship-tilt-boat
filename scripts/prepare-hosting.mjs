@@ -1,0 +1,22 @@
+import { cp, mkdir, writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+const root = resolve(import.meta.dirname, '..')
+await mkdir(resolve(root, 'dist/server'), { recursive: true })
+await mkdir(resolve(root, 'dist/client'), { recursive: true })
+await mkdir(resolve(root, 'dist/.openai'), { recursive: true })
+await cp(resolve(root, 'dist/index.html'), resolve(root, 'dist/client/index.html'))
+await cp(resolve(root, 'dist/assets'), resolve(root, 'dist/client/assets'), { recursive: true })
+await cp(resolve(root, '.openai/hosting.json'), resolve(root, 'dist/.openai/hosting.json'))
+await writeFile(resolve(root, 'dist/server/index.js'), `
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url)
+    let response = await env.ASSETS.fetch(request)
+    if (response.status === 404 && !url.pathname.includes('.')) {
+      response = await env.ASSETS.fetch(new Request(new URL('/', request.url), request))
+    }
+    return response
+  }
+}
+`)
