@@ -61,7 +61,7 @@ function renderMobile(): void {
     game.stop(); hud.classList.add('hidden'); stage.classList.remove('hidden')
     stage.innerHTML = landscape() ? `
       <div class="setup-card intro-card"><p class="kicker">仅限手机 · 真实姿态传感器</p><h1>友谊的小船</h1><p>保持手机横屏。接下来浏览器将申请动作与方向传感器权限。</p><div class="sensor-promise"><span>没有键盘</span><span>没有虚拟摇杆</span><span>只读真实姿态</span></div><button class="primary" data-action="permission">允许感应并开始</button><small>点击即表示你准备授予当前页面动作与方向权限</small></div>` : `
-      <div class="rotate-card"><div class="rotate-phone"><i></i></div><p class="kicker">第一步</p><h2>请将手机转为横屏</h2><p>本游戏只能在横屏状态下进行。</p></div>`
+      <div class="rotate-card"><div class="rotate-phone"><i></i></div><p class="kicker">第一步</p><h2>请将手机转为横屏</h2><p>请从屏幕顶部下拉，确认已开启“自动旋转”，然后横向拿住手机。横屏后页面会自动继续。</p><button class="secondary" data-action="recheck-orientation">重新检测横屏</button><small id="orientation-hint">若画面仍未旋转，请保持横向并点击按钮。</small></div>`
   }
 
   function showCalibration(message = ''): void {
@@ -131,7 +131,29 @@ function renderMobile(): void {
     if (action === 'start') void countdown()
     if (action === 'retry') showIntro()
     if (action === 'recalibrate') showCalibration()
+    if (action === 'recheck-orientation') {
+      if (landscape()) showIntro()
+      else {
+        const hint = document.querySelector<HTMLElement>('#orientation-hint')
+        if (hint) {
+          hint.textContent = '浏览器仍将当前画面识别为竖屏。请保持手机横向，确认系统自动旋转已开启后再试。'
+          hint.classList.add('inline-error')
+        }
+      }
+    }
   })
-  window.addEventListener('resize', () => { if (!landscape() && !stage.classList.contains('hidden')) showIntro() })
+
+  function syncOrientation(): void {
+    if (stage.classList.contains('hidden')) return
+    if (!landscape() || stage.querySelector('.rotate-card')) showIntro()
+  }
+
+  function scheduleOrientationSync(): void {
+    window.setTimeout(syncOrientation, 180)
+  }
+
+  window.addEventListener('resize', syncOrientation)
+  window.addEventListener('orientationchange', scheduleOrientationSync)
+  screen.orientation?.addEventListener('change', scheduleOrientationSync)
   showIntro()
 }
