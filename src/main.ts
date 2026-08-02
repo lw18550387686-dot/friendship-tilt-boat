@@ -9,7 +9,7 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 1024)
 const launchUrl = new URL(`${location.origin}${location.pathname}`)
 const invitedRoom = normalizeRoomCode(new URL(location.href).searchParams.get('room') ?? '')
-launchUrl.searchParams.set('release', '6')
+launchUrl.searchParams.set('release', '7')
 if (invitedRoom) launchUrl.searchParams.set('room', invitedRoom)
 const cleanUrl = launchUrl.toString()
 
@@ -190,7 +190,7 @@ function renderMobile(): void {
 
   async function showHostLobby(room: string): Promise<void> {
     const invite = new URL(`${location.origin}${location.pathname}`)
-    invite.searchParams.set('release', '6')
+    invite.searchParams.set('release', '7')
     invite.searchParams.set('room', room)
     stage.innerHTML = `<div class="setup-card coop-card"><p class="kicker">房间 ${room}</p><h2>邀请好友上船</h2><div class="invite-layout"><div class="invite-qr"><canvas id="invite-qr" aria-label="好友联机邀请二维码"></canvas></div><div><p id="coop-status">等待好友扫描二维码或打开邀请链接。</p><div class="connection-state waiting"><i></i><span>等待好友上船</span></div><button class="secondary compact" data-action="share-invite" data-invite-url="${invite}">分享链接</button><button class="secondary compact" data-action="copy-invite" data-invite-url="${invite}">复制链接</button></div></div><div class="mode-actions"><button class="primary" data-action="coop-start" disabled>好友上船后开始</button><button class="secondary" data-action="cancel-coop">取消联机</button></div><small>连接建立后，游戏数据通过加密的 WebRTC 点对点传输。</small></div>`
     await QRCode.toCanvas(document.querySelector<HTMLCanvasElement>('#invite-qr')!, invite.toString(), { width: 156, margin: 1, color: { dark: '#082c3a', light: '#fffaf0' }, errorCorrectionLevel: 'M' })

@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { gradeFor, isCapsized, isStable, type Tilt } from './sensor'
-import { DANGER_DEGREES, HORIZONTAL_LIMIT, LEVEL_CONFIGS, LEVEL_DURATION_SECONDS, levelForElapsed, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta, type LevelConfig } from './rules'
+import { DANGER_DEGREES, HORIZONTAL_LIMIT, LEVEL_CONFIGS, LEVEL_DURATION_SECONDS, levelForElapsed, obstacleMotion, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta, type LevelConfig } from './rules'
 
 export interface RunStats {
   timeLeft: number
@@ -44,7 +44,7 @@ const material = (color: number, roughness = 0.65, metalness = 0.05) => new THRE
 export class FriendshipBoatGame {
   private renderer: THREE.WebGLRenderer
   private scene = new THREE.Scene()
-  private camera = new THREE.PerspectiveCamera(55, 1, 0.1, 400)
+  private camera = new THREE.PerspectiveCamera(49, 1, 0.1, 400)
   private boat = new THREE.Group()
   private water!: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>
   private laneObjects = new THREE.Group()
@@ -160,8 +160,8 @@ export class FriendshipBoatGame {
 
     const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(9, 48), new THREE.MeshBasicMaterial({ color: 0xffe7a4, fog: false }))
     sunDisc.position.set(-32, 25, -95); this.scene.add(sunDisc)
-    this.camera.position.set(0, 8.2, 16)
-    this.camera.lookAt(0, 1.5, -8)
+    this.camera.position.set(0, 7.6, 14.4)
+    this.camera.lookAt(0, 1.55, -8)
     this.applyLevelTheme(LEVEL_CONFIGS[0])
   }
 
@@ -218,6 +218,7 @@ export class FriendshipBoatGame {
       obstacle.userData.index = index
       obstacle.userData.pass = 0
       obstacle.userData.hit = false
+      obstacle.scale.setScalar(1.24)
       obstacle.position.z = -24 - index * 17.5
       this.placeObstacle(obstacle)
       this.obstacles.add(obstacle)
@@ -258,8 +259,11 @@ export class FriendshipBoatGame {
     const lanePattern = [-3.35, 0, 3.35, 0, -3.35, 3.35, 0]
     const heightPattern = [0.72, 1.86, 0.72, 1.86, 1.86, 0.72, 1.25]
     const pattern = (Number(obstacle.userData.index) + Number(obstacle.userData.pass)) % lanePattern.length
-    obstacle.position.x = lanePattern[pattern]
-    obstacle.position.y = heightPattern[pattern]
+    obstacle.userData.baseX = lanePattern[pattern]
+    obstacle.userData.baseY = heightPattern[pattern]
+    obstacle.userData.phase = Number(obstacle.userData.index) * 1.73 + Number(obstacle.userData.pass) * 0.61
+    obstacle.position.x = Number(obstacle.userData.baseX)
+    obstacle.position.y = Number(obstacle.userData.baseY)
   }
 
   private resetObstacles(): void {
@@ -280,6 +284,7 @@ export class FriendshipBoatGame {
       const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.55, 0), material(0x62bf8d, 0.84))
       crown.position.y = 3.8; crown.scale.set(1.35, 0.72, 1.2); island.add(crown)
       island.position.set(side * (10 + index % 3 * 2.3), -0.4, -18 - index * 24)
+      island.scale.setScalar(1.14)
       island.userData.minLevel = 1; this.scenery.add(island)
 
       const coral = new THREE.Group()
@@ -289,6 +294,7 @@ export class FriendshipBoatGame {
         stem.rotation.z = (branch - 1) * -0.18; coral.add(stem)
       }
       coral.position.set(-side * (7.5 + index % 4 * 1.2), -0.2, -30 - index * 22)
+      coral.scale.setScalar(1.2)
       coral.userData.minLevel = 2; this.scenery.add(coral)
 
       if (index < 9) {
@@ -298,6 +304,7 @@ export class FriendshipBoatGame {
         const halo = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.09, 6, 30), new THREE.MeshBasicMaterial({ color: index % 2 ? 0xffd67d : 0x8dfff0 }))
         halo.position.y = 5.2; halo.rotation.x = Math.PI / 2; crystal.add(halo)
         crystal.position.set(side * (8.2 + index % 3 * 1.7), -0.2, -42 - index * 28)
+        crystal.scale.setScalar(1.18)
         crystal.userData.minLevel = 3; this.scenery.add(crystal)
       }
     }
@@ -395,6 +402,9 @@ export class FriendshipBoatGame {
         obstacle.userData.hit = false
         this.placeObstacle(obstacle)
       }
+      const motion = obstacleMotion(this.elapsed, levelConfig, Number(obstacle.userData.phase))
+      obstacle.position.x = THREE.MathUtils.clamp(Number(obstacle.userData.baseX) + motion.x, -HORIZONTAL_LIMIT, HORIZONTAL_LIMIT)
+      obstacle.position.y = THREE.MathUtils.clamp(Number(obstacle.userData.baseY) + motion.y, 0.55, 2.15)
       if (!obstacle.userData.hit && Math.abs(obstacle.position.z - this.boat.position.z) < 1.45 && overlapsObstacle(this.boat.position.x, this.boat.position.y, obstacle.position.x, obstacle.position.y)) {
         obstacle.userData.hit = true
         this.hits += 1

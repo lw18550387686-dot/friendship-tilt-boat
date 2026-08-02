@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HORIZONTAL_LIMIT, LEVEL_CONFIGS, levelForElapsed, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta } from './rules'
+import { HORIZONTAL_LIMIT, LEVEL_CONFIGS, levelForElapsed, obstacleMotion, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta } from './rules'
 
 describe('touch steering and obstacle rules', () => {
   it('maps a horizontal swipe to a bounded world-space movement step', () => {
@@ -25,5 +25,13 @@ describe('touch steering and obstacle rules', () => {
     expect(levelForElapsed(40).level).toBe(3)
     expect(LEVEL_CONFIGS.map((level) => level.speed)).toEqual([8.6, 11.8, 15.2])
     expect(LEVEL_CONFIGS.map((level) => level.obstacleCount)).toEqual([8, 13, 18])
+    expect(LEVEL_CONFIGS.map((level) => level.lateralSwing)).toEqual([0.58, 0.96, 1.34])
+  })
+
+  it('moves obstacles sideways and vertically with level-specific amplitude', () => {
+    const first = LEVEL_CONFIGS[0]
+    const offset = obstacleMotion(0, first, Math.PI / 2)
+    expect(offset.x).toBeCloseTo(first.lateralSwing)
+    expect(Math.abs(offset.y)).toBeLessThanOrEqual(first.verticalSwing)
   })
 })
