@@ -5,7 +5,9 @@ import { OrientationSensor } from './sensor'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 1024)
-const cleanUrl = `${location.origin}${location.pathname}`
+const launchUrl = new URL(`${location.origin}${location.pathname}`)
+launchUrl.searchParams.set('release', '3')
+const cleanUrl = launchUrl.toString()
 
 if (isMobile) renderMobile()
 else void renderDesktop()
