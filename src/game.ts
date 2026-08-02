@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { gradeFor, isCapsized, isStable, type Tilt } from './sensor'
-import { DANGER_DEGREES, HORIZONTAL_LIMIT, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta } from './rules'
+import { DANGER_DEGREES, HORIZONTAL_LIMIT, LEVEL_CONFIGS, LEVEL_DURATION_SECONDS, levelForElapsed, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta, type LevelConfig } from './rules'
 
 export interface RunStats {
   timeLeft: number
@@ -11,6 +11,15 @@ export interface RunStats {
   stable: boolean
   danger: boolean
   hits: number
+  level: 1 | 2 | 3
+  levelName: string
+  levelProgress: number
+}
+
+export interface GameFrame {
+  stats: RunStats
+  boat: { x: number; y: number; rotationX: number; rotationZ: number; scale: number }
+  obstacles: Array<{ x: number; y: number; z: number; rotationY: number; visible: boolean }>
 }
 
 export interface RunResult {
@@ -27,6 +36,7 @@ export interface RunResult {
 interface BoatCallbacks {
   update: (stats: RunStats) => void
   finish: (result: RunResult) => void
+  frame?: (frame: GameFrame) => void
 }
 
 const material = (color: number, roughness = 0.65, metalness = 0.05) => new THREE.MeshStandardMaterial({ color, roughness, metalness })
@@ -39,9 +49,13 @@ export class FriendshipBoatGame {
   private water!: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshStandardMaterial>
   private laneObjects = new THREE.Group()
   private obstacles = new THREE.Group()
+  private scenery = new THREE.Group()
+  private hemi = new THREE.HemisphereLight(0xe9fbff, 0x185b78, 2.7)
+  private sun = new THREE.DirectionalLight(0xfff2ce, 3.6)
   private tilt: Tilt = { roll: 0, pitch: 0 }
   private horizontalTarget = 0
   private running = false
+  private remoteFollowing = false
   private finished = false
   private timeLeft = 60
   private elapsed = 0
@@ -51,6 +65,8 @@ export class FriendshipBoatGame {
   private capsizeHold = 0
   private hits = 0
   private collisionPulse = 0
+  private currentLevel: 1 | 2 | 3 = 1
+  private lastFrameSent = 0
   private last = performance.now()
   private raf = 0
 
@@ -71,6 +87,7 @@ export class FriendshipBoatGame {
 
   start(): void {
     this.running = true
+    this.remoteFollowing = false
     this.finished = false
     this.timeLeft = 60
     this.elapsed = 0
@@ -80,26 +97,51 @@ export class FriendshipBoatGame {
     this.capsizeHold = 0
     this.hits = 0
     this.collisionPulse = 0
+    this.lastFrameSent = 0
     this.horizontalTarget = 0
     this.boat.position.set(0, 1.2, 3)
     this.boat.rotation.set(0, 0, 0)
     this.boat.scale.setScalar(1)
     this.resetObstacles()
+    this.applyLevelTheme(LEVEL_CONFIGS[0])
   }
 
-  stop(): void { this.running = false }
+  startRemote(): void {
+    this.running = false
+    this.remoteFollowing = true
+    this.finished = false
+    this.resetObstacles()
+    this.applyLevelTheme(LEVEL_CONFIGS[0])
+  }
+
+  stop(): void { this.running = false; this.remoteFollowing = false }
   setTilt(tilt: Tilt): void { this.tilt = tilt }
   steerHorizontal(deltaPixels: number, viewportWidth: number): void {
     if (!this.running) return
     this.horizontalTarget = THREE.MathUtils.clamp(this.horizontalTarget + swipeToWorldDelta(deltaPixels, viewportWidth), -HORIZONTAL_LIMIT, HORIZONTAL_LIMIT)
   }
 
+  applyRemoteFrame(frame: GameFrame): void {
+    if (!this.remoteFollowing) return
+    if (frame.stats.level !== this.currentLevel) this.applyLevelTheme(LEVEL_CONFIGS[frame.stats.level - 1])
+    this.boat.position.set(frame.boat.x, frame.boat.y, 3)
+    this.boat.rotation.x = frame.boat.rotationX
+    this.boat.rotation.z = frame.boat.rotationZ
+    this.boat.scale.setScalar(frame.boat.scale)
+    frame.obstacles.forEach((snapshot, index) => {
+      const obstacle = this.obstacles.children[index]
+      if (!obstacle) return
+      obstacle.position.set(snapshot.x, snapshot.y, snapshot.z)
+      obstacle.rotation.y = snapshot.rotationY
+      obstacle.visible = snapshot.visible
+    })
+    this.callbacks.update(frame.stats)
+  }
+
   private buildScene(): void {
-    const hemi = new THREE.HemisphereLight(0xe9fbff, 0x185b78, 2.7)
-    this.scene.add(hemi)
-    const sun = new THREE.DirectionalLight(0xfff2ce, 3.6)
-    sun.position.set(-12, 22, 18); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024)
-    this.scene.add(sun)
+    this.scene.add(this.hemi)
+    this.sun.position.set(-12, 22, 18); this.sun.castShadow = true; this.sun.shadow.mapSize.set(1024, 1024)
+    this.scene.add(this.sun)
 
     const waterGeometry = new THREE.PlaneGeometry(220, 260, 42, 52)
     const waterMaterial = new THREE.MeshStandardMaterial({ color: 0x177fa1, roughness: 0.24, metalness: 0.25, transparent: true, opacity: 0.97 })
@@ -113,11 +155,14 @@ export class FriendshipBoatGame {
     this.scene.add(this.laneObjects)
     this.buildObstacles()
     this.scene.add(this.obstacles)
+    this.buildScenery()
+    this.scene.add(this.scenery)
 
     const sunDisc = new THREE.Mesh(new THREE.CircleGeometry(9, 48), new THREE.MeshBasicMaterial({ color: 0xffe7a4, fog: false }))
     sunDisc.position.set(-32, 25, -95); this.scene.add(sunDisc)
     this.camera.position.set(0, 8.2, 16)
     this.camera.lookAt(0, 1.5, -8)
+    this.applyLevelTheme(LEVEL_CONFIGS[0])
   }
 
   private buildBoat(): void {
@@ -168,12 +213,12 @@ export class FriendshipBoatGame {
   }
 
   private buildObstacles(): void {
-    for (let index = 0; index < 14; index++) {
+    for (let index = 0; index < 18; index++) {
       const obstacle = this.buildObstacle(index % 3)
       obstacle.userData.index = index
       obstacle.userData.pass = 0
       obstacle.userData.hit = false
-      obstacle.position.z = -24 - index * 22
+      obstacle.position.z = -24 - index * 17.5
       this.placeObstacle(obstacle)
       this.obstacles.add(obstacle)
     }
@@ -221,9 +266,80 @@ export class FriendshipBoatGame {
     this.obstacles.children.forEach((obstacle, index) => {
       obstacle.userData.pass = 0
       obstacle.userData.hit = false
-      obstacle.position.z = -24 - index * 22
+      obstacle.position.z = -24 - index * 17.5
       this.placeObstacle(obstacle)
     })
+  }
+
+  private buildScenery(): void {
+    for (let index = 0; index < 13; index++) {
+      const side = index % 2 === 0 ? -1 : 1
+      const island = new THREE.Group()
+      const rock = new THREE.Mesh(new THREE.ConeGeometry(2.2 + index % 3 * 0.35, 4.2, 7), material(index % 2 ? 0x3d877b : 0x477d71, 0.94))
+      rock.position.y = 1.45; island.add(rock)
+      const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.55, 0), material(0x62bf8d, 0.84))
+      crown.position.y = 3.8; crown.scale.set(1.35, 0.72, 1.2); island.add(crown)
+      island.position.set(side * (10 + index % 3 * 2.3), -0.4, -18 - index * 24)
+      island.userData.minLevel = 1; this.scenery.add(island)
+
+      const coral = new THREE.Group()
+      for (let branch = 0; branch < 3; branch++) {
+        const stem = new THREE.Mesh(new THREE.ConeGeometry(0.28 + branch * 0.06, 2.5 + branch * 0.55, 7), material(branch % 2 ? 0xff7a8b : 0x8c72e5, 0.58))
+        stem.position.set((branch - 1) * 0.62, 1.05 + branch * 0.14, 0)
+        stem.rotation.z = (branch - 1) * -0.18; coral.add(stem)
+      }
+      coral.position.set(-side * (7.5 + index % 4 * 1.2), -0.2, -30 - index * 22)
+      coral.userData.minLevel = 2; this.scenery.add(coral)
+
+      if (index < 9) {
+        const crystal = new THREE.Group()
+        const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.85, 6.5 + index % 3, 6), material(index % 2 ? 0x4a66c8 : 0x55d5cf, 0.28, 0.38))
+        tower.position.y = 3; crystal.add(tower)
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.09, 6, 30), new THREE.MeshBasicMaterial({ color: index % 2 ? 0xffd67d : 0x8dfff0 }))
+        halo.position.y = 5.2; halo.rotation.x = Math.PI / 2; crystal.add(halo)
+        crystal.position.set(side * (8.2 + index % 3 * 1.7), -0.2, -42 - index * 28)
+        crystal.userData.minLevel = 3; this.scenery.add(crystal)
+      }
+    }
+
+    const starPositions: number[] = []
+    for (let index = 0; index < 90; index++) {
+      starPositions.push(Math.sin(index * 9.7) * 62, 12 + (index * 7 % 28), -20 - (index * 19 % 170))
+    }
+    const starGeometry = new THREE.BufferGeometry()
+    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3))
+    const stars = new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xe8fff9, size: 0.42, transparent: true, opacity: 0.86, fog: false }))
+    stars.userData.minLevel = 3; stars.userData.static = true; this.scenery.add(stars)
+    this.scenery.traverse((object) => { if (object instanceof THREE.Mesh) object.receiveShadow = object.castShadow = true })
+  }
+
+  private applyLevelTheme(config: LevelConfig): void {
+    this.currentLevel = config.level
+    const themes = [
+      { sky: 0x8ed7e9, fog: 0x8ed7e9, water: 0x177fa1, sun: 3.6, hemi: 2.7, exposure: 1.08 },
+      { sky: 0x67b9d0, fog: 0x77c5d5, water: 0x116f94, sun: 3.2, hemi: 2.55, exposure: 1.12 },
+      { sky: 0x485f9e, fog: 0x566fa4, water: 0x183f78, sun: 2.55, hemi: 2.25, exposure: 1.2 },
+    ][config.level - 1]
+    ;(this.scene.background as THREE.Color).setHex(themes.sky)
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.setHex(themes.fog)
+      this.scene.fog.near = config.level === 3 ? 30 : 38
+      this.scene.fog.far = config.level === 3 ? 122 : 145
+    }
+    this.water.material.color.setHex(themes.water)
+    this.sun.intensity = themes.sun
+    this.hemi.intensity = themes.hemi
+    this.renderer.toneMappingExposure = themes.exposure
+    this.obstacles.children.forEach((obstacle, index) => { obstacle.visible = index < config.obstacleCount })
+    this.scenery.children.forEach((object) => { object.visible = Number(object.userData.minLevel ?? 1) <= config.level })
+  }
+
+  private moveScenery(dt: number, speed: number): void {
+    for (const object of this.scenery.children) {
+      if (object.userData.static) continue
+      object.position.z += speed * dt * 0.72
+      if (object.position.z > 26) object.position.z -= 310
+    }
   }
 
   private update(dt: number, now: number): void {
@@ -236,6 +352,12 @@ export class FriendshipBoatGame {
     positions.needsUpdate = true
     this.water.geometry.computeVertexNormals()
 
+    if (this.remoteFollowing) {
+      this.moveScenery(dt, LEVEL_CONFIGS[this.currentLevel - 1].speed)
+      this.renderer.render(this.scene, this.camera)
+      return
+    }
+
     if (!this.running || this.finished) {
       this.boat.position.y = 1.2 + Math.sin(wave * 1.7) * 0.12
       this.boat.rotation.z *= Math.max(0, 1 - dt * 2)
@@ -244,6 +366,8 @@ export class FriendshipBoatGame {
     }
 
     this.elapsed += dt; this.timeLeft = Math.max(0, 60 - this.elapsed)
+    const levelConfig = levelForElapsed(this.elapsed)
+    if (levelConfig.level !== this.currentLevel) this.applyLevelTheme(levelConfig)
     const roll = THREE.MathUtils.clamp(this.tilt.roll, -9, 9)
     const pitch = THREE.MathUtils.clamp(this.tilt.pitch, -14, 14)
     this.maxRoll = Math.max(this.maxRoll, Math.abs(roll))
@@ -256,12 +380,13 @@ export class FriendshipBoatGame {
     this.boat.position.x += (this.horizontalTarget - this.boat.position.x) * Math.min(1, dt * 10)
     const verticalTarget = pitchToBoatHeight(pitch) + Math.sin(wave * 2.1) * 0.09
     this.boat.position.y += (verticalTarget - this.boat.position.y) * Math.min(1, dt * 8)
-    const courseSpeed = 9.2
+    const courseSpeed = levelConfig.speed
     for (const object of this.laneObjects.children) {
       object.position.z += courseSpeed * dt
       if (object.position.z > 18) object.position.z -= 312
     }
     for (const obstacle of this.obstacles.children) {
+      if (!obstacle.visible) continue
       obstacle.position.z += courseSpeed * dt
       obstacle.rotation.y += dt * 0.65
       if (obstacle.position.z > 15) {
@@ -277,6 +402,7 @@ export class FriendshipBoatGame {
         this.collisionPulse = 0.32
       }
     }
+    this.moveScenery(dt, courseSpeed)
     this.collisionPulse = Math.max(0, this.collisionPulse - dt)
     const collisionScale = this.collisionPulse > 0 ? 1 + Math.sin(this.collisionPulse * 55) * 0.055 : 1
     this.boat.scale.setScalar(collisionScale)
@@ -285,7 +411,24 @@ export class FriendshipBoatGame {
 
     if (isCapsized(roll)) this.capsizeHold += dt
     else this.capsizeHold = Math.max(0, this.capsizeHold - dt * 2.4)
-    this.callbacks.update({ timeLeft: this.timeLeft, stableSeconds: this.stableSeconds, score: Math.round(this.score), roll, pitch, stable, danger, hits: this.hits })
+    const stats: RunStats = {
+      timeLeft: this.timeLeft,
+      stableSeconds: this.stableSeconds,
+      score: Math.round(this.score),
+      roll,
+      pitch,
+      stable,
+      danger,
+      hits: this.hits,
+      level: levelConfig.level,
+      levelName: levelConfig.name,
+      levelProgress: Math.min(1, (this.elapsed - (levelConfig.level - 1) * LEVEL_DURATION_SECONDS) / LEVEL_DURATION_SECONDS),
+    }
+    this.callbacks.update(stats)
+    if (this.callbacks.frame && now - this.lastFrameSent >= 85) {
+      this.lastFrameSent = now
+      this.callbacks.frame(this.createFrame(stats))
+    }
     if (this.capsizeHold >= 0.18) this.finish('capsized')
     else if (this.timeLeft <= 0) this.finish('finished')
     this.renderer.render(this.scene, this.camera)
@@ -296,6 +439,26 @@ export class FriendshipBoatGame {
     this.finished = true; this.running = false
     if (reason === 'capsized') this.boat.rotation.z = this.tilt.roll > 0 ? -Math.PI / 2 : Math.PI / 2
     this.callbacks.finish({ completed: reason === 'finished', reason, score: Math.round(this.score), grade: gradeFor(this.stableSeconds, Math.max(0.01, this.elapsed)), stableSeconds: this.stableSeconds, totalSeconds: this.elapsed, maxRoll: this.maxRoll, hits: this.hits })
+  }
+
+  private createFrame(stats: RunStats): GameFrame {
+    return {
+      stats,
+      boat: {
+        x: this.boat.position.x,
+        y: this.boat.position.y,
+        rotationX: this.boat.rotation.x,
+        rotationZ: this.boat.rotation.z,
+        scale: this.boat.scale.x,
+      },
+      obstacles: this.obstacles.children.map((obstacle) => ({
+        x: obstacle.position.x,
+        y: obstacle.position.y,
+        z: obstacle.position.z,
+        rotationY: obstacle.rotation.y,
+        visible: obstacle.visible,
+      })),
+    }
   }
 
   private resize = (): void => {

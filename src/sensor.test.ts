@@ -18,11 +18,11 @@ describe('mobile tilt math', () => {
     expect(filter.push({ roll: 8, pitch: 4 })).toEqual({ roll: 4, pitch: 2 })
   })
 
-  it('uses the required three and five degree boundaries', () => {
-    expect(isStable(3, -3)).toBe(true)
-    expect(isStable(3.01, 0)).toBe(false)
-    expect(isCapsized(4.99)).toBe(false)
-    expect(isCapsized(-5)).toBe(true)
+  it('uses the tighter one-and-a-half and three degree boundaries', () => {
+    expect(isStable(1.5, -1.5)).toBe(true)
+    expect(isStable(1.51, 0)).toBe(false)
+    expect(isCapsized(2.99)).toBe(false)
+    expect(isCapsized(-3)).toBe(true)
   })
 
   it('calculates performance grades', () => {
