@@ -9,6 +9,7 @@ await mkdir(resolve(root, 'dist/mobile-v4'), { recursive: true })
 await mkdir(resolve(root, 'dist/mobile-v5'), { recursive: true })
 await mkdir(resolve(root, 'dist/mobile-v6'), { recursive: true })
 await mkdir(resolve(root, 'dist/mobile-v7'), { recursive: true })
+await mkdir(resolve(root, 'dist/mobile-v8'), { recursive: true })
 await mkdir(resolve(root, 'dist/.openai'), { recursive: true })
 await cp(resolve(root, 'dist/index.html'), resolve(root, 'dist/client/index.html'))
 await cp(resolve(root, 'dist/assets'), resolve(root, 'dist/client/assets'), { recursive: true })
@@ -22,6 +23,8 @@ await cp(resolve(root, 'dist/index.html'), resolve(root, 'dist/mobile-v6/index.h
 await cp(resolve(root, 'dist/assets'), resolve(root, 'dist/mobile-v6/assets'), { recursive: true })
 await cp(resolve(root, 'dist/index.html'), resolve(root, 'dist/mobile-v7/index.html'))
 await cp(resolve(root, 'dist/assets'), resolve(root, 'dist/mobile-v7/assets'), { recursive: true })
+await cp(resolve(root, 'dist/index.html'), resolve(root, 'dist/mobile-v8/index.html'))
+await cp(resolve(root, 'dist/assets'), resolve(root, 'dist/mobile-v8/assets'), { recursive: true })
 await cp(resolve(root, '.openai/hosting.json'), resolve(root, 'dist/.openai/hosting.json'))
 await writeFile(resolve(root, 'dist/server/index.js'), `
 export default {
