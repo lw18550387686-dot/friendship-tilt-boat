@@ -1,28 +1,42 @@
 export const STABLE_DEGREES = 1.5
 export const DANGER_DEGREES = 2.4
 export const CAPSIZE_DEGREES = 3
-export const HORIZONTAL_LIMIT = 5.8
-export const LEVEL_DURATION_SECONDS = 20
-export const TOTAL_LEVELS = 3
+export const HORIZONTAL_LIMIT = 7.2
+export const LEVEL_DURATION_SECONDS = 15
+export const TOTAL_LEVELS = 5
+export const TOTAL_DURATION_SECONDS = LEVEL_DURATION_SECONDS * TOTAL_LEVELS
+
+export type LevelNumber = 1 | 2 | 3 | 4 | 5
 
 export interface LevelConfig {
-  level: 1 | 2 | 3
+  level: LevelNumber
   speed: number
   obstacleCount: number
   lateralSwing: number
   verticalSwing: number
   swingSpeed: number
+  trackingStrength: number
   name: string
 }
 
 export const LEVEL_CONFIGS: readonly LevelConfig[] = [
-  { level: 1, speed: 9.6, obstacleCount: 10, lateralSwing: 1.05, verticalSwing: 0.18, swingSpeed: 1.2, name: '晨光湾' },
-  { level: 2, speed: 13.8, obstacleCount: 15, lateralSwing: 1.72, verticalSwing: 0.38, swingSpeed: 1.65, name: '珊瑚峡' },
-  { level: 3, speed: 18.4, obstacleCount: 18, lateralSwing: 2.45, verticalSwing: 0.62, swingSpeed: 2.2, name: '星潮门' },
+  { level: 1, speed: 10.5, obstacleCount: 12, lateralSwing: 1.2, verticalSwing: 0.2, swingSpeed: 1.25, trackingStrength: 0, name: '晨光群岛' },
+  { level: 2, speed: 13.6, obstacleCount: 16, lateralSwing: 1.8, verticalSwing: 0.38, swingSpeed: 1.6, trackingStrength: 0.05, name: '赤霞珊瑚' },
+  { level: 3, speed: 16.9, obstacleCount: 20, lateralSwing: 2.5, verticalSwing: 0.58, swingSpeed: 1.95, trackingStrength: 0.12, name: '星辉晶峡' },
+  { level: 4, speed: 20.5, obstacleCount: 24, lateralSwing: 3.1, verticalSwing: 0.78, swingSpeed: 2.3, trackingStrength: 0.22, name: '极光浮城' },
+  { level: 5, speed: 24.4, obstacleCount: 28, lateralSwing: 3.8, verticalSwing: 1, swingSpeed: 2.7, trackingStrength: 0.35, name: '雷暴深渊' },
 ]
 
 export function obstacleMotion(elapsedSeconds: number, config: LevelConfig, phase: number, mode = 0): { x: number; y: number } {
   const time = Math.max(0, elapsedSeconds) * config.swingSpeed + phase
+  if (mode % 6 === 4) return {
+    x: Math.sin(time * 1.82 + Math.sin(time * 0.41)) * config.lateralSwing,
+    y: Math.cos(time * 2.15) * config.verticalSwing,
+  }
+  if (mode % 6 === 5) return {
+    x: (Math.sin(time * 0.94) * 0.72 + Math.cos(time * 2.7) * 0.28) * config.lateralSwing,
+    y: Math.sin(time * 1.9 + Math.PI / 5) * config.verticalSwing,
+  }
   if (mode % 4 === 1) return {
     x: Math.sin(time * 1.38) * config.lateralSwing,
     y: Math.sin(time * 0.72 + Math.PI / 3) * config.verticalSwing,

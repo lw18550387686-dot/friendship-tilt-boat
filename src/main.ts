@@ -2,14 +2,14 @@ import './styles.css'
 import QRCode from 'qrcode'
 import { FriendshipBoatGame, type RunResult, type RunStats } from './game'
 import { OrientationSensor, type Tilt } from './sensor'
-import { CAPSIZE_DEGREES, DANGER_DEGREES, STABLE_DEGREES } from './rules'
+import { CAPSIZE_DEGREES, DANGER_DEGREES, STABLE_DEGREES, TOTAL_DURATION_SECONDS } from './rules'
 import { CoopSession, normalizeRoomCode, type CoopMessage } from './coop'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && Math.min(screen.width, screen.height) < 1024)
 const launchUrl = new URL(`${location.origin}${location.pathname}`)
 const invitedRoom = normalizeRoomCode(new URL(location.href).searchParams.get('room') ?? '')
-launchUrl.searchParams.set('release', '8')
+launchUrl.searchParams.set('release', '9')
 if (invitedRoom) launchUrl.searchParams.set('room', invitedRoom)
 const cleanUrl = launchUrl.toString()
 
@@ -23,7 +23,7 @@ async function renderDesktop(): Promise<void> {
         <p class="kicker">手机姿态感应挑战</p>
         <h1>友谊的<br><em>小船</em></h1>
         <p class="desktop-lead">这是一款手机姿态感应游戏，请使用手机体验。</p>
-        <div class="steps"><span>01 手机横屏</span><span>02 允许感应</span><span>03 水平校准</span><span>04 三关避障</span><span>05 好友联机</span></div>
+        <div class="steps"><span>01 手机横屏</span><span>02 允许感应</span><span>03 站立校准</span><span>04 五境闯关</span><span>05 好友联机</span></div>
       </section>
       <aside class="phone-card">
         <div class="qr-frame"><canvas id="qr-code" aria-label="手机游戏二维码"></canvas><i></i></div>
@@ -46,12 +46,12 @@ type PlayMode = 'solo' | 'host' | 'guest'
 function renderMobile(): void {
   app.innerHTML = `
     <main class="mobile-game">
-      <canvas id="boat-canvas" aria-label="通过手机姿态和左右滑动控制的友谊小船三维游戏"></canvas>
+      <canvas id="boat-canvas" aria-label="站立时通过手机姿态和左右滑动控制的友谊小船五境游戏"></canvas>
       <div class="game-shade"></div>
       <div id="mobile-hud" class="mobile-hud hidden">
-        <div class="hud-cell"><small>剩余时间</small><b id="time-left">60.0</b></div>
+        <div class="hud-cell"><small>剩余时间</small><b id="time-left">${TOTAL_DURATION_SECONDS.toFixed(1)}</b></div>
         <div class="balance-stack">
-          <div class="level-pill"><b id="level-label">第1关 · 晨光湾</b><span><i id="level-progress"></i></span></div>
+          <div class="level-pill"><b id="level-label">第1关 · 晨光群岛</b><span><i id="level-progress"></i></span></div>
           <div class="balance-meter"><span>左倾</span><div><i id="tilt-marker"></i><em></em></div><span>右倾</span></div>
         </div>
         <div class="hud-cell right"><small>得分 · 碰撞</small><b><span id="score">0</span><em id="hit-count">0次</em></b></div>
@@ -135,21 +135,21 @@ function renderMobile(): void {
     endCoop()
     game.stop(); mobileRoot.classList.remove('is-running'); hud.classList.add('hidden'); stage.classList.remove('hidden')
     stage.innerHTML = landscape() ? `
-      <div class="setup-card intro-card"><p class="kicker">仅限手机 · 真实姿态传感器</p><h1>友谊的小船</h1><p>保持手机横屏。接下来浏览器将申请动作与方向传感器权限。</p><div class="sensor-promise"><span>三关递进</span><span>3°翻船</span><span>可邀请好友</span></div><button class="primary" data-action="permission">允许感应并开始</button><small>点击即表示你准备授予当前页面动作与方向权限</small></div>` : `
+      <div class="setup-card intro-card"><p class="kicker">仅限手机 · 站立姿态挑战</p><h1>友谊的小船</h1><p>保持手机横屏。授权传感器后，请站立并双手持机完成基准校准。</p><div class="sensor-promise"><span>五境递进</span><span>3°翻船</span><span>动态追踪障碍</span></div><button class="primary" data-action="permission">允许感应并开始</button><small>请在周围无障碍、地面平整的安全位置站立游玩</small></div>` : `
       <div class="rotate-card"><div class="rotate-phone"><i></i></div><p class="kicker">第一步</p><h2>请将手机转为横屏</h2><p>请从屏幕顶部下拉，确认已开启“自动旋转”，然后横向拿住手机。横屏后页面会自动继续。</p><button class="secondary" data-action="recheck-orientation">重新检测横屏</button><small id="orientation-hint">若画面仍未旋转，请保持横向并点击按钮。</small></div>`
   }
 
   function showCalibration(message = ''): void {
     mobileRoot.classList.remove('is-running'); stage.classList.remove('hidden'); hud.classList.add('hidden')
-    stage.innerHTML = `<div class="setup-card calibrate-card"><div class="step-number">02</div><p class="kicker">水平基准</p><h2>把手机屏幕朝上<br>放在平整桌面</h2><p>保持手机静止，然后点击校准。之后拿起手机时，这个姿态会被视为 0°。</p>${message ? `<p class="inline-error">${message}</p>` : ''}<div class="level-visual"><i></i><span>0°</span></div><button class="primary" data-action="calibrate">校准水平</button></div>`
+    stage.innerHTML = `<div class="setup-card calibrate-card"><div class="step-number">02</div><p class="kicker">站立位基准</p><h2>站稳并双手横屏持机</h2><p>双脚与肩同宽，手机置于胸前、屏幕朝向自己，手肘自然微屈。保持不动后点击校准，这个站立持机姿态将被视为 0°。</p>${message ? `<p class="inline-error">${message}</p>` : ''}<div class="level-visual"><i></i><span>站立 0°</span></div><button class="primary" data-action="calibrate">校准站立位</button></div>`
   }
 
   function showReady(): void {
     mobileRoot.classList.remove('is-running')
     const actions = invitedRoom
       ? `<button class="primary" data-action="join-room">加入好友房间 ${invitedRoom}</button><button class="secondary" data-action="solo-start">改为单人挑战</button>`
-      : `<button class="primary" data-action="solo-start">单人三关挑战</button><button class="secondary" data-action="host-room">邀请好友一起坐船</button>`
-    stage.innerHTML = `<div class="setup-card ready-card"><div class="success-mark">✓</div><p class="kicker">校准完成 · 三关航程</p><h2>超过 ±${CAPSIZE_DEGREES}° 就翻船</h2><p>左右滑动避障，俯仰手机控制上下。双人模式会平均两人的姿态，需要一起保持默契。</p><div class="angle-rules"><span><i class="safe"></i>${STABLE_DEGREES}° 稳定</span><span><i class="warn"></i>${DANGER_DEGREES}° 警戒</span><span><i class="danger"></i>${CAPSIZE_DEGREES}° 翻船</span></div><div class="mode-actions">${actions}</div></div>`
+      : `<button class="primary" data-action="solo-start">单人五境挑战</button><button class="secondary" data-action="host-room">邀请好友一起坐船</button>`
+    stage.innerHTML = `<div class="setup-card ready-card"><div class="success-mark">✓</div><p class="kicker">站立校准完成 · 五境航程</p><h2>超过 ±${CAPSIZE_DEGREES}° 就翻船</h2><p>保持站立，左右滑动躲避移动障碍，俯仰手机控制上下。后两境会出现快速横扫与追踪障碍。</p><div class="angle-rules"><span><i class="safe"></i>${STABLE_DEGREES}° 稳定</span><span><i class="warn"></i>${DANGER_DEGREES}° 警戒</span><span><i class="danger"></i>${CAPSIZE_DEGREES}° 翻船</span></div><div class="mode-actions">${actions}</div></div>`
   }
 
   function showError(reason: string): void {
@@ -173,7 +173,7 @@ function renderMobile(): void {
   }
 
   function calibrate(): void {
-    if (!sensor.calibrate()) { showCalibration('还没有收到姿态数据，请保持手机静止后再试。'); return }
+    if (!sensor.calibrate()) { showCalibration('还没有收到姿态数据，请站稳并保持手机静止后再试。'); return }
     showReady()
   }
 
@@ -190,7 +190,7 @@ function renderMobile(): void {
 
   async function showHostLobby(room: string): Promise<void> {
     const invite = new URL(`${location.origin}${location.pathname}`)
-    invite.searchParams.set('release', '8')
+    invite.searchParams.set('release', '9')
     invite.searchParams.set('room', room)
     stage.innerHTML = `<div class="setup-card coop-card"><p class="kicker">房间 ${room}</p><h2>邀请好友上船</h2><div class="invite-layout"><div class="invite-qr"><canvas id="invite-qr" aria-label="好友联机邀请二维码"></canvas></div><div><p id="coop-status">等待好友扫描二维码或打开邀请链接。</p><div class="connection-state waiting"><i></i><span>等待好友上船</span></div><button class="secondary compact" data-action="share-invite" data-invite-url="${invite}">分享链接</button><button class="secondary compact" data-action="copy-invite" data-invite-url="${invite}">复制链接</button></div></div><div class="mode-actions"><button class="primary" data-action="coop-start" disabled>好友上船后开始</button><button class="secondary" data-action="cancel-coop">取消联机</button></div><small>连接建立后，游戏数据通过加密的 WebRTC 点对点传输。</small></div>`
     await QRCode.toCanvas(document.querySelector<HTMLCanvasElement>('#invite-qr')!, invite.toString(), { width: 156, margin: 1, color: { dark: '#082c3a', light: '#fffaf0' }, errorCorrectionLevel: 'M' })
@@ -218,7 +218,7 @@ function renderMobile(): void {
       if (label) label.textContent = status === 'connected' ? '双人连接成功' : status === 'waiting' ? '等待连接' : message
     }
     const start = document.querySelector<HTMLButtonElement>('[data-action="coop-start"]')
-    if (start) { start.disabled = status !== 'connected'; start.textContent = status === 'connected' ? '双人开始三关挑战' : '好友上船后开始' }
+    if (start) { start.disabled = status !== 'connected'; start.textContent = status === 'connected' ? '双人开始五境挑战' : '好友上船后开始' }
     const badge = document.querySelector<HTMLElement>('#coop-badge')
     if (badge && status === 'disconnected') { badge.textContent = '好友已离开'; badge.classList.add('warning') }
   }
@@ -242,7 +242,7 @@ function renderMobile(): void {
     const url = button.dataset.inviteUrl
     if (!url) return
     try {
-      if (navigator.share) await navigator.share({ title: '友谊的小船：邀请你一起上船', text: '打开链接，校准手机后一起挑战三关！', url })
+      if (navigator.share) await navigator.share({ title: '友谊的小船：邀请你一起上船', text: '打开链接，站立校准后一起挑战五种环境！', url })
       else { await navigator.clipboard.writeText(url); updateCoopStatus('waiting', '邀请链接已复制，请发送给好友') }
     } catch { /* The user may cancel the native share sheet. */ }
   }
@@ -291,7 +291,7 @@ function renderMobile(): void {
 
   function showResult(result: RunResult): void {
     mobileRoot.classList.remove('is-running'); hud.classList.add('hidden'); stage.className = 'mobile-stage'; stage.classList.remove('hidden')
-    stage.innerHTML = `<div class="setup-card result-card"><p class="kicker">${result.completed ? '三关航程完成' : '挑战结束'}</p><h2>${result.completed ? '友谊经受住了三重风浪' : '小船翻了，再默契一点'}</h2><div class="grade">${result.grade}</div><div class="result-grid"><span><small>得分</small><b>${result.score}</b></span><span><small>稳定时间</small><b>${result.stableSeconds.toFixed(1)}秒</b></span><span><small>最大倾角</small><b>${result.maxRoll.toFixed(1)}°</b></span><span><small>碰撞</small><b>${result.hits}次</b></span></div><p>${result.reason === 'capsized' ? `横倾达到 ${CAPSIZE_DEGREES}° 并超过安全缓冲，小船已翻覆。` : '你完成了晨光湾、珊瑚峡和星潮门。'}</p><button class="primary" data-action="recalibrate">重新校准再挑战</button></div>`
+    stage.innerHTML = `<div class="setup-card result-card"><p class="kicker">${result.completed ? '五境航程完成' : '挑战结束'}</p><h2>${result.completed ? '友谊穿越了五重风浪' : '小船翻了，再默契一点'}</h2><div class="grade">${result.grade}</div><div class="result-grid"><span><small>得分</small><b>${result.score}</b></span><span><small>稳定时间</small><b>${result.stableSeconds.toFixed(1)}秒</b></span><span><small>最大倾角</small><b>${result.maxRoll.toFixed(1)}°</b></span><span><small>碰撞</small><b>${result.hits}次</b></span></div><p>${result.reason === 'capsized' ? `横倾达到 ${CAPSIZE_DEGREES}° 并超过安全缓冲，小船已翻覆。` : '你完成了晨光群岛、赤霞珊瑚、星辉晶峡、极光浮城和雷暴深渊。'}</p><button class="primary" data-action="recalibrate">重新站立校准再挑战</button></div>`
   }
 
   stage.addEventListener('click', (event) => {

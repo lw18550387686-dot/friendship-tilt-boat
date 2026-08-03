@@ -10,6 +10,9 @@ describe('mobile tilt math', () => {
   it('calibrates and wraps angular deltas', () => {
     expect(calibratedTilt({ roll: -178, pitch: 7 }, { roll: 178, pitch: 2 })).toEqual({ roll: 4, pitch: 5 })
     expect(normalizeAngle(361)).toBe(1)
+    const standingBaseline = mapToLandscape(88, -1, 90)
+    const standingSample = mapToLandscape(91, -2, 90)
+    expect(calibratedTilt(standingSample, standingBaseline)).toEqual({ roll: 3, pitch: 1 })
   })
 
   it('filters sudden sensor noise', () => {

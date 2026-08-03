@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HORIZONTAL_LIMIT, LEVEL_CONFIGS, levelForElapsed, obstacleMotion, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta } from './rules'
+import { HORIZONTAL_LIMIT, LEVEL_CONFIGS, TOTAL_DURATION_SECONDS, levelForElapsed, obstacleMotion, overlapsObstacle, pitchToBoatHeight, swipeToWorldDelta } from './rules'
 
 describe('touch steering and obstacle rules', () => {
   it('maps a horizontal swipe to a bounded world-space movement step', () => {
@@ -19,13 +19,16 @@ describe('touch steering and obstacle rules', () => {
     expect(overlapsObstacle(0, 1.3, 0, 2.2)).toBe(false)
   })
 
-  it('progresses through three increasingly fast and crowded levels', () => {
+  it('progresses through five increasingly fast and crowded environments', () => {
     expect(levelForElapsed(0).level).toBe(1)
-    expect(levelForElapsed(20).level).toBe(2)
-    expect(levelForElapsed(40).level).toBe(3)
-    expect(LEVEL_CONFIGS.map((level) => level.speed)).toEqual([9.6, 13.8, 18.4])
-    expect(LEVEL_CONFIGS.map((level) => level.obstacleCount)).toEqual([10, 15, 18])
-    expect(LEVEL_CONFIGS.map((level) => level.lateralSwing)).toEqual([1.05, 1.72, 2.45])
+    expect(levelForElapsed(15).level).toBe(2)
+    expect(levelForElapsed(30).level).toBe(3)
+    expect(levelForElapsed(45).level).toBe(4)
+    expect(levelForElapsed(60).level).toBe(5)
+    expect(TOTAL_DURATION_SECONDS).toBe(75)
+    expect(LEVEL_CONFIGS.map((level) => level.speed)).toEqual([10.5, 13.6, 16.9, 20.5, 24.4])
+    expect(LEVEL_CONFIGS.map((level) => level.obstacleCount)).toEqual([12, 16, 20, 24, 28])
+    expect(LEVEL_CONFIGS.map((level) => level.lateralSwing)).toEqual([1.2, 1.8, 2.5, 3.1, 3.8])
   })
 
   it('moves obstacles sideways and vertically with level-specific amplitude', () => {
@@ -33,9 +36,9 @@ describe('touch steering and obstacle rules', () => {
     const offset = obstacleMotion(0, first, Math.PI / 2)
     expect(offset.x).toBeCloseTo(first.lateralSwing)
     expect(Math.abs(offset.y)).toBeLessThanOrEqual(first.verticalSwing)
-    const complexOffset = obstacleMotion(1.3, LEVEL_CONFIGS[2], 0.7, 2)
-    expect(Math.abs(complexOffset.x)).toBeLessThanOrEqual(LEVEL_CONFIGS[2].lateralSwing)
-    expect(Math.abs(complexOffset.y)).toBeLessThanOrEqual(LEVEL_CONFIGS[2].verticalSwing)
+    const complexOffset = obstacleMotion(1.3, LEVEL_CONFIGS[4], 0.7, 5)
+    expect(Math.abs(complexOffset.x)).toBeLessThanOrEqual(LEVEL_CONFIGS[4].lateralSwing)
+    expect(Math.abs(complexOffset.y)).toBeLessThanOrEqual(LEVEL_CONFIGS[4].verticalSwing)
   })
 
   it('supports wider collision zones for rotating gate obstacles', () => {

@@ -75,7 +75,7 @@ export class OrientationSensor {
   private raw: Tilt | null = null
   private baseline: Tilt | null = null
   private filtered: Tilt = { roll: 0, pitch: 0 }
-  private filter = new TiltFilter(0.16)
+  private filter = new TiltFilter(0.22)
   private listening = false
   onTilt?: (tilt: Tilt) => void
 
